@@ -1,0 +1,12 @@
+name: CompareAirly
+title: CompareAirly
+username:
+account: kamilsijko
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 551480
+bundleId: 1680811
+url: https://kamilsijko.shinyapps.io/CompareAirly/
+when: 1541323944.85493
+asMultiple: FALSE
+asStatic: FALSE
