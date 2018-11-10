@@ -5,8 +5,8 @@ account: kamilsijko
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 551480
-bundleId: 1680811
+bundleId: 1693242
 url: https://kamilsijko.shinyapps.io/CompareAirly/
-when: 1541323944.85493
+when: 1541856842.91029
 asMultiple: FALSE
 asStatic: FALSE

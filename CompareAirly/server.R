@@ -6,6 +6,8 @@ library(DT)
 library(tidyverse)
 library(plotly)
 
+pallette <- c("red", "green", "blue", "orange", "purple")
+
 my_secrets <- function() {
   path <- here::here("secret.json")
   if (!file.exists(path)) {
@@ -29,7 +31,7 @@ shinyServer(function(input, output) {
     clat <- click$lat
     clng <- click$lng
     # query airly about nearest stations
-    nearest <- GET("https://airapi.airly.eu/v2/installations/nearest",
+    response <- GET("https://airapi.airly.eu/v2/installations/nearest",
       accept_json(),
       add_headers(apikey = key),
       query = list(
@@ -37,18 +39,70 @@ shinyServer(function(input, output) {
         lng = clng,
         maxResults = 5
       )
-    ) %>%
+    )
+    headers <-
+      response %>%
+      headers()
+    limits <- list(
+      dmax = as.integer(headers$`x-ratelimit-limit-day`),
+      dremain = as.integer(headers$`x-ratelimit-remaining-day`),
+      mmax = as.integer(headers$`x-ratelimit-limit-minute`),
+      mremain = as.integer(headers$`x-ratelimit-remaining-minute`)
+    )
+    limits$dpcent <- limits$dremain / limits$dmax * 100
+    limits$mpcent <- limits$mremain / limits$mmax * 100
+    output$APIstatus <- renderMenu(
+      dropdownMenu(
+        type = "tasks",
+        badgeStatus = case_when(
+          limits$dpcent > 50 & limits$mpcent > 75 ~ "success",
+          limits$dpcent > 25 & limits$mpcent > 25 ~ "warning",
+          limits$dpcent <= 25 | limits$mpcent <= 25 ~ "danger"
+        ),
+        taskItem(
+          value = limits$dpcent,
+          color = case_when(
+            limits$dpcent > 75 ~ "green",
+            limits$dpcent > 25 ~ "yellow",
+            limits$dpcent <= 25 ~ "red"
+          ),
+          "Daily air.ly API limit"
+        ),
+        taskItem(
+          value = limits$mpcent,
+          color = case_when(
+            limits$mpcent > 75 ~ "green",
+            limits$mpcent > 25 ~ "yellow",
+            limits$mpcent <= 25 ~ "red"
+          ),
+          "Minute air.ly API limit"
+        )
+      )
+    )
+    nearest <-
+      response %>%
       content("text") %>%
       fromJSON()
+    nearest$location$color <- pallette[1:nrow(nearest$location)]
+    nearest$location$label <- paste("ID", nearest$id,
+      nearest$address$street,
+      nearest$address$number,
+      sep = " "
+    )
 
     # on click zoom in to area and add information about air stations
     if (!is.null(dim(nearest))) {
       leafletProxy("map") %>%
         clearMarkers() %>%
-        addMarkers(
+        addAwesomeMarkers(
           lat = ~latitude,
           lng = ~longitude,
-          data = nearest$location
+          label = ~label,
+          data = nearest$location,
+          icon = awesomeIcons(
+            icon = "glyphicon-chevron-down",
+            markerColor = nearest$location$color
+          )
         ) %>%
         fitBounds(
           min(nearest$location$longitude),
@@ -56,16 +110,6 @@ shinyServer(function(input, output) {
           max(nearest$location$longitude),
           max(nearest$location$latitude)
         )
-
-      output$nearest <- renderDataTable(
-        bind_cols(
-          id = nearest$id,
-          nearest$address %>%
-            select(-c(country, displayAddress1, displayAddress2)),
-          elevation = nearest$elevation
-        ),
-        options = list(pageLength = 5, dom = "t")
-      )
 
       output$distplot <- renderPlotly({
         measurment <-
@@ -84,47 +128,63 @@ shinyServer(function(input, output) {
         values <-
           measurment %>%
           lapply(function(x) {
-            if(any(sapply(x$history$values, length)>0)){
-                x$history %>%
-                    select(fromDateTime, values) %>%
-                    unnest() %>%
-                    bind_rows() %>%
-                    spread(name, value)
+            if (any(sapply(x$history$values, length) > 0)) {
+              x$history %>%
+                select(fromDateTime, values) %>%
+                unnest() %>%
+                bind_rows() %>%
+                spread(name, value)
             } else {
-                NULL
+              NULL
             }
           }) %>%
           bind_rows(.id = "id")
-        
+
         indexes <-
-            measurment %>%
-            lapply(function(x) {
-                if(any(sapply(x$history$indexes, length)>0)){
-                    x$history %>%
-                        select(fromDateTime, indexes) %>%
-                        unnest() %>%
-                        bind_rows() %>%
-                        spread(name, value)
-                } else {
-                    NULL
-                }
-            }) %>%
-            bind_rows(.id = "id")
-        
+          measurment %>%
+          lapply(function(x) {
+            if (any(sapply(x$history$indexes, length) > 0)) {
+              x$history %>%
+                select(fromDateTime, indexes) %>%
+                unnest() %>%
+                bind_rows() %>%
+                spread(name, value)
+            } else {
+              NULL
+            }
+          }) %>%
+          bind_rows(.id = "id")
+
         data <-
-            values %>% 
-            left_join(
-                indexes %>% 
-                    select(id, fromDateTime, AIRLY_CAQI)
-            )
+          values %>%
+          left_join(
+            indexes %>%
+              select(id, fromDateTime, AIRLY_CAQI),
+            by = c("id", "fromDateTime")
+          ) %>%
+          left_join(tibble(
+            id = as.character(nearest$id),
+            color = nearest$location$color
+          ),
+          by = "id"
+          )
+
+        colormap <-
+            data %>% 
+            count(id, color)
 
         plot <-
           data %>%
-          gather("measure", "value", -fromDateTime, -id) %>%
+          gather("measure", "value", -fromDateTime, -color, -id) %>%
           ggplot(aes(x = value, fill = id)) +
-          geom_density(aes(alpha = 0.2)) +
-          facet_wrap(~measure, scales = "free")
-        
+          geom_density(alpha = 0.2) +
+          facet_wrap(~measure, scales = "free") +
+          scale_fill_manual(
+            name = "ID",
+            values = setNames(colormap$color, colormap$id),
+            labels = as.character(colormap$id)
+          )
+
         ggplotly(plot)
       })
     }
