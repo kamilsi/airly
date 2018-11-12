@@ -37,7 +37,8 @@ shinyServer(function(input, output) {
       query = list(
         lat = clat,
         lng = clng,
-        maxResults = 5
+        maxResults = 5,
+        maxDistanceKM = if_else(input$longrange, 100, 3)
       )
     )
     headers <-
@@ -83,14 +84,19 @@ shinyServer(function(input, output) {
       response %>%
       content("text") %>%
       fromJSON()
-    nearest$location$color <- pallette[1:nrow(nearest$location)]
-    nearest$location$label <- paste("ID", nearest$id,
-      nearest$address$street,
-      nearest$address$number,
-      sep = " "
-    )
-
-    # on click zoom in to area and add information about air stations
+    if (!is_empty(nearest)) {
+        nearest$location$color <- pallette[1:nrow(nearest$location)]
+        nearest$location$label <- paste("ID", nearest$id,
+                                        nearest$address$street,
+                                        nearest$address$number,
+                                        sep = " "
+        )  
+    } else {
+        shinyalert("Oops!",
+                   "No stations here. Click elsewhere.",
+                   type = "error")
+    }
+    # on click: zoom in to area and add information about air stations
     if (!is.null(dim(nearest))) {
       leafletProxy("map") %>%
         clearMarkers() %>%

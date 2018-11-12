@@ -3,15 +3,22 @@ library(shinythemes)
 library(leaflet)
 library(shinydashboard)
 library(plotly)
+library(shinyalert)
+library(shinyWidgets)
 
 dashboardPage(
   dashboardHeader(
       title = "Compare air.ly",
       dropdownMenuOutput("APIstatus")
   ),
-  dashboardSidebar(disable = TRUE),
+  dashboardSidebar(
+      collapsed = TRUE,
+      switchInput(inputId = "longrange", value = FALSE,
+                  onLabel = "long", offLabel = "short")
+  ),
   dashboardBody(
     fluidRow(
+      useShinyalert(),
       column(
         width = 4,
         box(
